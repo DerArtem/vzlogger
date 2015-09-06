@@ -92,7 +92,7 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
       # On MacOS
       set(GNUTLS_LIBRARY_NAMES ${GNUTLS_LIBRARY_NAMES} libgnutls.dylib)
     else(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-      set(GNUTLS_LIBRARY_NAMES ${GNUTLS_LIBRARY_NAMES} libgnutls.a)
+      set(GNUTLS_LIBRARY_NAMES ${GNUTLS_LIBRARY_NAMES} libgnutls.so)
     endif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   endif(WIN32)
 
@@ -100,7 +100,7 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
     foreach(lib ${PC_GNUTLS_STATIC_LIBRARIES})
       string(TOUPPER ${lib} _NAME_UPPER)
 
-      find_library(GNUTLS_${_NAME_UPPER}_LIBRARY NAMES "lib${lib}.a"
+      find_library(GNUTLS_${_NAME_UPPER}_LIBRARY NAMES "lib${lib}.so"
 	HINTS
 	${_gnutls_LIBRARIES_SEARCH_DIRS}
 	${PC_GNUTLS_LIBDIR}

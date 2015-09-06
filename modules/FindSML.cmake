@@ -12,7 +12,7 @@ IF (NOT WIN32)
   include(FindPkgConfig)
   if ( PKG_CONFIG_FOUND )
 
-     pkg_check_modules (PC_SML sml>=0.9)
+     pkg_check_modules (PC_SML libsml>=0.9)
 
      set(SML_DEFINITIONS ${PC_SML_CFLAGS_OTHER})
   endif(PKG_CONFIG_FOUND)
@@ -81,7 +81,7 @@ FIND_PATH(SML_INCLUDE_DIR sml/sml_message.h
 IF(WIN32)
   SET(SML_LIBRARY_NAMES ${SML_LIBRARY_NAMES} libsml.lib)
 ELSE(WIN32)
-  SET(SML_LIBRARY_NAMES ${SML_LIBRARY_NAMES} libsml.a)
+  SET(SML_LIBRARY_NAMES ${SML_LIBRARY_NAMES} libsml.so)
 ENDIF(WIN32)
 FIND_LIBRARY(SML_LIBRARY NAMES ${SML_LIBRARY_NAMES}
   HINTS
