@@ -80,6 +80,7 @@ int MeterModbus::open() {
         }
         
 	modbus_set_slave(ctx, 1);
+	modbus_flush(ctx);
 
 	return SUCCESS;
 }
