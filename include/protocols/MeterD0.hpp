@@ -37,12 +37,13 @@
 
 class MeterD0 : public vz::protocol::Protocol {
 public:
-	MeterD0(std::list<Option> options);
+	MeterD0(std::list<Option> &options);
 	virtual ~MeterD0();
 
 	int open();
 	int close();
 	ssize_t read(std::vector<Reading> &rds, size_t n);
+	virtual bool allowInterval() const { return _pull.size() ? true : false; } // only allow conf setting interval if pull is set (otherwise meter sends autom.)
 
 	const char *host() const { return _host.c_str(); }
 	const char *device() const { return _device.c_str(); }

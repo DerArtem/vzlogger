@@ -60,7 +60,7 @@ static const meter_details_t protocols[] = {
 /*  aliasdescriptionmax_rdsperiodic
 	===============================================================================================*/
 	METER_DETAIL(file, File, "Read from file or fifo",32,true),
-	// METER_DETAIL(exec, "Parse program output",32,true),
+	METER_DETAIL(exec, Exec, "Parse program output",32,false),
 	METER_DETAIL(random, Random, "Generate random values with a random walk",1,true),
 	METER_DETAIL(fluksov2, Fluksov2, "Read from Flukso's onboard SPI fifo",16,false),
 	METER_DETAIL(s0, S0, "S0-meter directly connected to RS232",4,false),
@@ -229,6 +229,12 @@ Meter::Meter(std::list<Option> pOptions) :
 		throw;
 	}
 
+	// does the meter allow interval parameter?
+	if (_interval > 0 && !(_protocol.get()->allowInterval())) {
+		print(log_warning, "Interval set but not allowed for this meter! Ignoring (setting to 0). Use aggregation if you want less frequent output.", name());
+		_interval = 0;
+	}
+
 	print(log_debug, "Meter configured, %s.", name(), _enable ? "enabled" : "disabled");
 }
 
@@ -256,7 +262,7 @@ size_t Meter::read(std::vector<Reading> &rds, size_t n) {
 int meter_lookup_protocol(const char* name, meter_protocol_t *protocol) {
 	if (!name) return ERR_NOT_FOUND;
 	for (const meter_details_t *it = meter_get_protocols(); it->id != meter_protocol_none; it++) { // we have to stop when the id is null not the ptr to the array!
-		if (it->name && (strcmp(it->name, name) == 0)) {
+		if (it->name && (strcasecmp(it->name, name) == 0)) {
 			if (protocol)
 				*protocol = it->id; // else ignore anyhow. can be used to check whether a protocol exists.
 			return SUCCESS;

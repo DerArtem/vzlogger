@@ -92,7 +92,7 @@ git_update() {
 	else
 		echo "$folder not found"
 		echo "cloning $folder git repository"
-		git clone $git_params "$git_repo"
+		git clone $git_params "$git_repo" $folder
 	fi
 
 	if [ -n "$git_dirty" ]; then
@@ -267,7 +267,7 @@ if [ -z "$1" ] || contains "$*" vzlogger; then
 		echo "make sure to configure vzlogger before running (see etc/vzlogger.conf)"
 	fi
 
-	if [ -n $(pidof vzlogger) ]; then
+	if [ -n "$(pidof vzlogger)" ]; then
 		echo
 		echo "vzlogger is already running"
 		echo "make sure to restart vzlogger"

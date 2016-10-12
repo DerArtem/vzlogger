@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "api/Volkszaehler.hpp"
+#include <regex>
 // #include "api/CurlResponse.hpp"
 
 // dirty hack until we find a better solution:
@@ -24,13 +25,44 @@ class Volkszaehler_Test
 
 Config_Options options("etc/vzlogger.conf");
 
+#ifdef HAVE_CPP_REGEX
+
+TEST(api_Volkszaehler, regex_for_configs)
+{
+	// ^\s*(#|$)
+	std::regex regex("^\\s*(//(.*|)|$)");
+	EXPECT_TRUE(std::regex_match ("", regex ));
+	EXPECT_TRUE(std::regex_match ("//", regex ));
+	EXPECT_TRUE(std::regex_match ("//bla", regex ));
+	EXPECT_TRUE(std::regex_match ("// bla", regex ));
+	EXPECT_TRUE(std::regex_match ("\t//", regex ));
+	EXPECT_TRUE(std::regex_match ("\t// bla", regex ));
+	EXPECT_TRUE(std::regex_match ("  //", regex ));
+	// some neg. tests:
+	EXPECT_FALSE(std::regex_match("bla", regex));
+}
+
+#endif
+
 TEST(api_Volkszaehler, config_options){
 	MapContainer mappings;
 #ifdef OCR_SUPPORT
 	options.config_parse(mappings); // let's see whether we can parse the provided example config
 #else
 	// doesn't throw anylonger since OCR removed by basic example conf. ASSERT_THROW(options.config_parse(mappings), vz::VZException); // the default config should fail due to missing Protocol ocr. There might be another failure...
+	// so parse it anyhow here:
+	options.config_parse(mappings);
 #endif
+}
+
+TEST(api_Volkszaehler, no_middleware) {
+	using namespace vz::api;
+	std::list<Option> options;
+	//options.push_front(Option("middleware", (char*)"bla_middleware"));
+	ReadingIdentifier::Ptr pRid;
+	Channel *ch = new Channel(options, std::string("bla_api"), std::string("bla_uuid"), pRid);
+	Channel::Ptr chp(ch);
+	ASSERT_THROW(Volkszaehler v(chp, options), vz::VZException);
 }
 
 TEST(api_Volkszaehler, api_parse_exception) {

@@ -45,6 +45,7 @@ MeterS0::MeterS0(std::list<Option> options, HWIF *hwif, HWIF *hwif_dir)
 		, _send_zero(false)
 		, _debounce_delay_ms(0)
 		, _nonblocking_delay_ns(1e5)
+		, _first_impulse(true)
 {
 	OptionList optlist;
 
@@ -155,7 +156,57 @@ void timespec_sub(const struct timespec &a, const struct timespec &b, struct tim
 	res.tv_nsec = a.tv_nsec - b.tv_nsec;
 	if (res.tv_nsec < 0) {
 		--res.tv_sec;
-		res.tv_nsec += 1e9;
+		res.tv_nsec += 1000000000ul;
+	}
+}
+
+void timespec_add(struct timespec &a, const struct timespec &b)
+{
+	a.tv_sec += b.tv_sec;
+	a.tv_nsec += b.tv_nsec;
+	// normalize nsec
+	while (a.tv_nsec >= 1000000000l) {
+		++a.tv_sec;
+		a.tv_nsec -= 1000000000l;
+	}
+}
+
+unsigned long timespec_sub_ms(const struct timespec &a, const struct timespec &b)
+{
+	unsigned long ret;
+	ret = a.tv_sec - b.tv_sec;
+	if (a.tv_nsec < b.tv_nsec) {
+		--ret;
+		ret *= 1000ul;
+		ret += (1000000000ul + a.tv_nsec - b.tv_nsec) / 1000000ul;
+	} else {
+		ret *= 1000ul;
+		ret += (a.tv_nsec - b.tv_nsec) / 1000000ul;
+	}
+	return ret;
+}
+
+void timespec_add_ms(struct timespec &a, unsigned long ms)
+{
+	a.tv_sec += ms/1000ul;
+	a.tv_nsec += (ms%1000ul)*1000000ul;
+	// normalize nsec
+	while (a.tv_nsec >= 1000000000l) {
+		++a.tv_sec;
+		a.tv_nsec -= 1000000000l;
+	}
+}
+
+void MeterS0::check_ref_for_overflow()
+{
+	// check whether _ms_last_impulse get's too long
+	// and has risk for overflow (roughly once a month with 32bit unsigned long)
+
+	if (_ms_last_impulse > (1ul<<30)) {
+		// now we enter a race condition so there might be wrong impulse now!
+		timespec_add_ms(_time_last_ref, 1ul<<30 );
+		_ms_last_impulse -= 1ul << 30;
+
 	}
 }
 
@@ -178,31 +229,45 @@ void MeterS0::counter_thread()
 		}
 	}
 
-	int last_state = 0; // low edge initial value
+	// read current state from hwif: (this is needed for gpio if as well to reset waitForImpulse after startup (see bug #229)
+	int cur_state = _hwif->status();
+
+	int last_state = (cur_state >= 0) ? cur_state : 0; // use current state if it is valid else assume low edge
 	const int nonblocking_delay_ns = _nonblocking_delay_ns;
 	while(!_counter_thread_stop) {
 		if (is_blocking) {
-			if (_hwif->waitForImpulse()) {
-				if (_hwif_dir && ( _hwif_dir->status()>0 ) )
-					++_impulses_neg;
-				else
-					++_impulses;
-			}
-			// we handle errors from waitForImpulse by simply debouncing and trying again (with debounce_delay_ms==0 this might be an endless loop
-			if (_debounce_delay_ms > 0){
-				// nanosleep _debounce_delay_ms
-				struct timespec ts;
-				ts.tv_sec = _debounce_delay_ms/1000;
-				ts.tv_nsec = (_debounce_delay_ms%1000)*1e6;
-				struct timespec rem;
-				while ( (-1 == nanosleep(&ts, &rem)) && (errno == EINTR) ) {
-					ts = rem;
+			bool timeout = false;
+			if (_hwif->waitForImpulse( timeout )) {
+				// something has happened on the hardwareinterface (hwif)
+				// because of the bouncing of the contact we still can not decide if it is a rising edge event
+				// that's why we have to debounce first...
+				if (!timeout && (_debounce_delay_ms > 0) ){
+					// nanosleep _debounce_delay_ms
+					struct timespec ts;
+					ts.tv_sec = _debounce_delay_ms/1000;
+					ts.tv_nsec = (_debounce_delay_ms%1000)*1e6;
+					struct timespec rem;
+					while ( (-1 == nanosleep(&ts, &rem)) && (errno == EINTR) ) {
+						ts = rem;
+					}
+				}
+				//  ... and then going on with our work
+				struct timespec temp_ts;
+				clock_gettime(CLOCK_REALTIME, &temp_ts);
+				_ms_last_impulse = timespec_sub_ms(temp_ts, _time_last_ref); // uses atomic operator=
+
+				if (_hwif->status()!=0) {                         // check if value of gpio is set (or not supported/error (-1) for e.g. UART HWIF -> rising edge event (or error in case we accept the trigger)
+					if (_hwif_dir && ( _hwif_dir->status()>0 ) ) // check if second hardware interface has caused the event
+						++_impulses_neg;
+					else                                         // main hardware interface caused the event
+						++_impulses;
 				}
 			}
 		} else { // non-blocking case:
 			int state = _hwif->status();
 			if ((state >= 0) && (state != last_state)) {
 				if (last_state == 0) { // low->high edge found
+//  auch hier muss wahrscheinlich erst das debouncing erfolgen, bevor es zur Auswertung kommt !!
 					if (_hwif_dir && (_hwif_dir->status()>0))
 						++_impulses_neg;
 					else
@@ -239,12 +304,15 @@ int MeterS0::open() {
 	_impulses = 0;
 	_impulses_neg = 0;
 
+	clock_gettime(CLOCK_REALTIME, &_time_last_read); // we use realtime as this is returned as well (clock_monotonic would be better but...)
+	// store current time as last_time. Next read will return after 1s.
+	_time_last_ref = _time_last_read;
+	_ms_last_impulse = 0;
+	_time_last_impulse_returned = _time_last_read;
+
 	// create counter_thread and pass this as param
 	_counter_thread_stop = false;
 	_counter_thread = std::thread(&MeterS0::counter_thread, this);
-
-	clock_gettime(CLOCK_REALTIME, &_time_last); // we use realtime as this is returned as well (clock_monotonic would be better but...)
-	// store current time as last_time. Next read will return after 1s.
 
 	print(log_finest, "counter_thread created", name().c_str());
 
@@ -271,7 +339,7 @@ ssize_t MeterS0::read(std::vector<Reading> &rds, size_t n) {
 	if (n<4) return 0; // would be worth a debug msg!
 
 	// wait till last+1s (even if we are already later)
-	struct timespec req = _time_last;
+	struct timespec req = _time_last_read;
 	// (or even more seconds if !send_zero
 
 	unsigned int t_imp;
@@ -292,22 +360,47 @@ ssize_t MeterS0::read(std::vector<Reading> &rds, size_t n) {
 	} while (!_send_zero && (is_zero)); // so we are blocking is send_zero is false and no impulse coming!
 	// todo check thread cancellation on program termination
 
-	// we got t_imp and/or t_imp_neq between _time_last and req
+	// we got t_imp and/or t_imp_neq between _time_last_read and req
 
 	clock_gettime(CLOCK_REALTIME, &req);
+	double t1;
+	double t2;
+	if (_hwif->is_blocking()) {
+		// if is_zero we need to correct the time here as no impulse occured!
+		if (is_zero) {
+			// we simply add the time from req-_time_last_read to _time_last_ref:
+			struct timespec d1s;
+			timespec_sub(req, _time_last_read, d1s);
+			timespec_add(_time_last_ref, d1s);
+			// this has a little racecond as well (if after existing while loop a impulse returned the ms_last_impulse might have been increased already based on old time_last_ref
+		}
 
-	double t1 = _time_last.tv_sec + _time_last.tv_nsec / 1e9;
-	double t2 = req.tv_sec + req.tv_nsec / 1e9;
+		// we use the time from last impulse
+		t1 = _time_last_impulse_returned.tv_sec + _time_last_impulse_returned.tv_nsec / 1e9;
+		struct timespec temp_ts = _time_last_ref;
+		timespec_add_ms(temp_ts, _ms_last_impulse);
+		check_ref_for_overflow();
+		t2 = temp_ts.tv_sec + temp_ts.tv_nsec / 1e9;
+		_time_last_impulse_returned = temp_ts;
+		_time_last_read = req;
+		req = _time_last_impulse_returned;
+	} else {
+		// we use the time from last read call
+		t1= _time_last_read.tv_sec + _time_last_read.tv_nsec / 1e9;
+		t2 = req.tv_sec + req.tv_nsec / 1e9;
+		_time_last_read = req;
+	}
+
 	if (t2==t1) t2+=0.000001;
 
-	_time_last = req;
-
 	if (_send_zero || t_imp > 0) {
-		double value = 3600000 / ((t2-t1) * (_resolution * t_imp));
-		rds[ret].identifier(new StringIdentifier("Power"));
-		rds[ret].time(req);
-		rds[ret].value(value);
-		++ret;
+		if (!_first_impulse) {
+			double value = (3600000 / ((t2-t1) * _resolution)) * t_imp;
+			rds[ret].identifier(new StringIdentifier("Power"));
+			rds[ret].time(req);
+			rds[ret].value(value);
+			++ret;
+		}
 		rds[ret].identifier(new StringIdentifier("Impulse"));
 		rds[ret].time(req);
 		rds[ret].value(t_imp);
@@ -315,16 +408,20 @@ ssize_t MeterS0::read(std::vector<Reading> &rds, size_t n) {
 	}
 
 	if (_send_zero || t_imp_neg > 0) {
-		double value = 3600000 / ((t2-t1) * (_resolution * t_imp_neg));
-		rds[ret].identifier(new StringIdentifier("Power_neg"));
-		rds[ret].time(req);
-		rds[ret].value(value);
-		++ret;
+		if (!_first_impulse) {
+			double value = (3600000 / ((t2-t1) * _resolution)) * t_imp_neg;
+			rds[ret].identifier(new StringIdentifier("Power_neg"));
+			rds[ret].time(req);
+			rds[ret].value(value);
+			++ret;
+		}
 		rds[ret].identifier(new StringIdentifier("Impulse_neg"));
 		rds[ret].time(req);
 		rds[ret].value(t_imp_neg);
 		++ret;
 	}
+	if (_first_impulse && ret>0)
+		_first_impulse = false;
 
 	print(log_finest, "Reading S0 - returning %d readings (n=%d n_neg = %d)", name().c_str(), ret, t_imp, t_imp_neg);
 
@@ -370,8 +467,8 @@ bool MeterS0::HWIF_UART::_open()
 	tio.c_iflag = IGNPAR;
 	tio.c_oflag = 0;
 	tio.c_lflag = 0;
-	tio.c_cc[VMIN]=1;
-	tio.c_cc[VTIME]=0;
+	tio.c_cc[VMIN]=0;
+	tio.c_cc[VTIME]=10; // 1s timeout see man 3 termios
 
 	tcflush(fd, TCIFLUSH);
 
@@ -394,16 +491,28 @@ bool MeterS0::HWIF_UART::_close()
 	return true;
 }
 
-bool MeterS0::HWIF_UART::waitForImpulse()
+bool MeterS0::HWIF_UART::waitForImpulse(bool &timeout)
 {
-	if (_fd<0) return false;
+	if (_fd<0) {
+		timeout = false;
+		return false;
+	}
 	char buf[8];
 
 	// clear input buffer
 	tcflush(_fd, TCIOFLUSH);
 
 	// blocking until one character/pulse is read
-	if (::read(_fd, buf, 8) < 1) return false;
+	ssize_t ret;
+	ret = ::read( _fd, buf, 8 );
+	if (ret < 1) {
+		timeout = false;
+		return false;
+	} else if (ret == 0) {
+		timeout = true;
+		return false;
+	}
+	// we don't have to set timeout here. Only in case of error.
 
 	return true;
 }
@@ -576,7 +685,7 @@ bool MeterS0::HWIF_GPIO::_close()
 	return true;
 }
 
-int MeterS0::HWIF_GPIO::status()
+int MeterS0::HWIF_GPIO::status() // this resets any pending events for waitForImpulse as well!
 {
 	unsigned char buf[2];
 	if (_fd<0) return -1;
@@ -585,23 +694,37 @@ int MeterS0::HWIF_GPIO::status()
 	return 0;
 }
 
-bool MeterS0::HWIF_GPIO::waitForImpulse()
+bool MeterS0::HWIF_GPIO::waitForImpulse(bool &timeout)
 {
 	unsigned char buf[2];
-	if (_fd<0) return false;
+	if (_fd<0) {
+		timeout = false;
+		return false;
+	}
 
 	struct pollfd poll_fd;
 	poll_fd.fd = _fd;
 	poll_fd.events = POLLPRI|POLLERR;
 	poll_fd.revents = 0;
 
-	int rv = poll(&poll_fd, 1, -1);    // block endlessly
+	int rv = poll(&poll_fd, 1, 1000);    // timeout set to 1s
 	print(log_debug, "MeterS0:HWIF_GPIO:first poll returned %d", "S0", rv);
 	if (rv > 0) {
 		if (poll_fd.revents & POLLPRI) {
-			if (::pread(_fd, buf, 1, 0) < 1) return false;
-		} else return false;
-	} else return false;
-
-	return true;
+			if (::pread(_fd, buf, 1, 0) < 1) {
+				timeout = false;
+				return false;
+			}
+			return true;
+		} else {
+			timeout = false;
+			return false;
+		}
+	} else
+		if (rv == 0) {
+			timeout = true;
+			return false;
+		}
+	timeout = false;
+	return false;
 }

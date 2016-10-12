@@ -70,9 +70,10 @@ void MeterMap::start() {
 		for (iterator it = _channels.begin(); it!=_channels.end(); it++) {
 
 			if (options.logging()) {
-				(*it)->start();
+				(*it)->start(*it);
 				print(log_debug, "Logging thread started", (*it)->name());
-			}
+			} else
+				print(log_debug, "Logging thread not started", (*it)->name());
 		}
 		_thread_running = true;
 	} else {
@@ -98,18 +99,22 @@ bool MeterMap::stopped() {
 	return false;
 }
 
-void MeterMap::cancel() {
+void MeterMap::cancel() { // get's called from MapContainer::quit that get's called from sigint handler ::quit
+	print(log_finest, "MeterMap::cancel entered...", "main");
 	if (_meter->isEnabled() && running()) {
 		for (iterator it = _channels.begin(); it != _channels.end(); it++) {
-			(*it)->cancel();
+			(*it)->cancel(); // stops the logging_thread via pthread_cancel
 			(*it)->join();
 		}
-		pthread_cancel(_thread);
+		print(log_finest, "MeterMap::cancel wait for readingthread", "main");
+		pthread_cancel(_thread); // readingthread
 		pthread_join(_thread, NULL);
 		_thread_running = false;
+		print(log_finest, "MeterMap::cancel wait for meter::close", "main");
 		_meter->close();
 		//_channels.clear();
 	}
+	print(log_finest, "MeterMap::cancel finished.", "main");
 }
 
 void MeterMap::registration() {
@@ -122,14 +127,17 @@ void MeterMap::registration() {
 		// create configured api interfaces
 		// NOTE: if additional APIs are introduced both threads.cpp and MeterMap.cpp need to be updated
 		vz::ApiIF::Ptr api;
-		if ((*ch)->apiProtocol() == "mysmartgrid") {
+		if (0 == strcasecmp((*ch)->apiProtocol().c_str(), "mysmartgrid")) {
 			api =  vz::ApiIF::Ptr(new vz::api::MySmartGrid(*ch, (*ch)->options()));
 			print(log_debug, "Using MySmartGrid api.", (*ch)->name());
 		}
-		else if ((*ch)->apiProtocol() == "null") {
+		else if (0 == strcasecmp((*ch)->apiProtocol().c_str(), "null")) {
 			api =  vz::ApiIF::Ptr(new vz::api::Null(*ch, (*ch)->options()));
 			print(log_debug, "Using null api- meter data available via local httpd if enabled.", (*ch)->name());
 		} else {
+			if (strcasecmp((*ch)->apiProtocol().c_str(), "volkszaehler"))
+				print(log_error, "Wrong config! api: <%s> is unknown!", (*ch)->name(), (*ch)->apiProtocol().c_str());
+			// try to use volkszaehler api anyhow:
 			api =  vz::ApiIF::Ptr(new vz::api::Volkszaehler(*ch, (*ch)->options()));
 			print(log_debug, "Using default volkszaehler api.", (*ch)->name());
 		}

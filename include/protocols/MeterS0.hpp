@@ -32,6 +32,13 @@
 
 #include <protocols/Protocol.hpp>
 
+// some helper functions. might need a namespace
+void timespec_sub(const struct timespec &a, const struct timespec &b, struct timespec &res);
+void timespec_add(struct timespec &a, const struct timespec &b); // a+=b
+void timespec_add_ms(struct timespec &a, unsigned long ms);
+unsigned long timespec_sub_ms(const struct timespec &a, const struct timespec &b);
+
+
 class MeterS0 : public vz::protocol::Protocol {
 public:
 	class HWIF {
@@ -39,7 +46,7 @@ public:
 		virtual ~HWIF() {};
 		virtual bool _open() = 0;
 		virtual bool _close() = 0;
-		virtual bool waitForImpulse() = 0; // blocking interface
+		virtual bool waitForImpulse(bool &timeout) = 0; // blocking interface
 		virtual int status() = 0; // non blocking IO status (<0 = ERR, 0 = low, 1 = high)
 		virtual bool is_blocking() const = 0;
 	};
@@ -51,7 +58,7 @@ public:
 
 		virtual bool _open();
 		virtual bool _close();
-		virtual bool waitForImpulse();
+		virtual bool waitForImpulse(bool &timeout);
 		virtual int status() { return -1; }; // not supported always return error
 		virtual bool is_blocking() const { return true; };
 	protected:
@@ -67,7 +74,7 @@ public:
 
 		virtual bool _open();
 		virtual bool _close();
-		virtual bool waitForImpulse();
+		virtual bool waitForImpulse(bool &timeout);
 		virtual int status();
 		virtual bool is_blocking() const { return true; }
 	protected:
@@ -84,7 +91,7 @@ public:
 
 		virtual bool _open();
 		virtual bool _close();
-		virtual bool waitForImpulse() {return false;} // not supported
+		virtual bool waitForImpulse(bool &timeout) {timeout = false; return false;} // not supported
 		virtual int status();
 		virtual bool is_blocking() const { return false; }
 	protected:
@@ -101,9 +108,11 @@ public:
 	int open();
 	int close();
 	ssize_t read(std::vector<Reading> &rds, size_t n);
+	virtual bool allowInterval() const { return false; } // don't allow interval setting in conf file with S0
 
   protected:
 	void counter_thread();
+	void check_ref_for_overflow();
 
     HWIF * _hwif;
 	HWIF * _hwif_dir; // for dir gpio pin
@@ -118,7 +127,11 @@ public:
 	int _debounce_delay_ms;
 	int _nonblocking_delay_ns;
 
-	struct timespec _time_last;	// timestamp of last impulse
+	struct timespec _time_last_read;	// timestamp of last read. 1s interval based on this timestamp
+	struct timespec _time_last_ref; // reference timestamp for the millisecond delta
+	std::atomic<unsigned long> _ms_last_impulse; // ms of last impulse relative to _time_last_ref
+	struct timespec _time_last_impulse_returned; // timestamp of last impulse returned
+	bool _first_impulse;
 };
 
 #endif /* _S0_H_ */

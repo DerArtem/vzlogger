@@ -48,14 +48,14 @@ class Buffer {
 
 	void aggregate(int aggtime, bool aggFixedInterval);
 	void push(const Reading &rd);
-	void clean();
+	void clean(bool deleted_only = true);
 	void undelete();
 	void shrink(/*size_t keep = 0*/);
-	char *dump(char *dump, size_t len);
+	std::string dump();
 
 	inline iterator begin() { return _sent.begin(); }
 	inline iterator end()   { return _sent.end(); }
-	inline size_t size() { return _sent.size(); }
+	inline size_t size() { lock(); size_t s = _sent.size(); unlock(); return s; }
 
 	inline bool newValues() const { return _newValues; }
 	inline void clear_newValues() { _newValues = false; }

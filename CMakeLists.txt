@@ -6,8 +6,8 @@ if(POLICY CMP0011)
 endif(POLICY CMP0011)
 
 set(VZLOGGER_MAJOR_VERSION 0)
-set(VZLOGGER_MINOR_VERSION 4)
-set(VZLOGGER_SUB_VERSION   4)
+set(VZLOGGER_MINOR_VERSION 6)
+set(VZLOGGER_SUB_VERSION   0)
 set(VERSION_SEP "-")
 set(VZLOGGER_SHORT_VERSION "${VZLOGGER_MAJOR_VERSION}${VERSION_SEP}${VZLOGGER_MINOR_VERSION}")
 set(VZLOGGER_VERSION "${VZLOGGER_SHORT_VERSION}${VERSION_SEP}${VZLOGGER_SUB_VERSION}")
@@ -24,7 +24,6 @@ ADD_DEFINITIONS(-g3)
 # Where are the additional libraries installed? Note: provide includes
 # path here, subsequent checks will resolve everything else
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/modules")
-include (UseCodeCoverage)
 
 # get git sha1 as additional version:
 include(GetGitRevisionDescription)
@@ -69,6 +68,10 @@ OPTION(ENABLE_OCR
 OPTION(ENABLE_OCR_TESSERACT
 	"enable support for OCR text recognition meter (def=off)"
 	OFF)
+
+OPTION(METEREXEC_ROOTACCESS
+  "compile MeterExec protocol to use root privileges for script calls (def=no)])"
+  Off)
 
 # find dependencies
 # libsml
@@ -170,7 +173,7 @@ myconfigure_file(
 
 add_subdirectory(src)
 
-find_package(Subversion)
+find_package(Git)
 
 set(ENABLE_GOOGLEMOCK TRUE)
 #disable unit tests on gcc4.6 (problems with googlemock 1.7)
@@ -189,17 +192,15 @@ endif()
 include(CTest)
 enable_testing()
 
-if(Subversion_FOUND AND ENABLE_GOOGLEMOCK)
+if(GIT_FOUND AND ENABLE_GOOGLEMOCK)
   add_subdirectory(gmock)
   add_subdirectory(tests)
 else()
-  if (ENABLE_GOOGLEMOCK)
-   message(WARNING "googletest based unit tests disabled due to missing subversion! Please install svn.")
-  endif()
+ if (ENABLE_GOOGLEMOCK)
+    message(WARNING "googletest based unit tests disabled due to missing git. Please install git.")
+ endif(ENABLE_GOOGLEMOCK)
 endif()
-if(Subversion_FOUND)
-  add_test(vzlogger_unit_tests tests/vzlogger_unit_tests)
-endif()
+add_test(vzlogger_unit_tests tests/vzlogger_unit_tests)
 
 ### print some output for the user
 message("")
@@ -214,6 +215,9 @@ endif(SML_FOUND)
 if(MICROHTTPD_FOUND)
 message("             microhttpd: -L${MICROHTTPD_LIBRARY} -I${MICROHTTPD_INCLUDE_DIR}")
 endif(MICROHTTPD_FOUND)
+if(METEREXEC_ROOTACCESS)
+  message("             MeterExec: root privileges")
+endif(METEREXEC_ROOTACCESS)
 if(MBUS_FOUND)
 message("             libmbus: -L${MBUS_LIBRARY} -I${MBUS_INCLUDE_DIR}")
 endif(MBUS_FOUND)

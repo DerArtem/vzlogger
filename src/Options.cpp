@@ -27,6 +27,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sstream>
+#include <algorithm>
 
 #include "Options.hpp"
 #include <VZException.hpp>
@@ -103,10 +104,10 @@ Option::Option(const char *pKey, bool pValue)
 }
 
 Option::~Option() {
-	if (_type == type_array){
+	if (_type == type_array || _type == type_object) {
 		if (value.jso)
 			json_object_put(value.jso);
-			value.jso = 0;
+		value.jso = 0;
 	}
 }
 
@@ -141,7 +142,7 @@ Option::operator struct json_object*() const {
 
 //Option& OptionList::lookup(List<Option> options, char *key) {
 const Option &OptionList::lookup(std::list<Option> const &options, const std::string &key) const {
-	for (const_iterator it = options.begin(); it != options.end(); it++) {
+	for (const_iterator it = options.cbegin(); it != options.cend(); ++it) {
 		if (it->key() == key ) {
 			return (*it);
 		}
@@ -150,40 +151,47 @@ const Option &OptionList::lookup(std::list<Option> const &options, const std::st
 	throw vz::OptionNotFoundException("Option '"+ std::string(key) +"' not found");
 }
 
-const char *OptionList::lookup_string(std::list<Option> const &options, const char *key)
+const char *OptionList::lookup_string(std::list<Option> const &options, const char *key) const
 {
-	Option opt = lookup(options, key);
-	return (const char*)opt;
+	const Option &opt = lookup(options, key);
+	return opt.operator const char *();
+}
+
+const char *OptionList::lookup_string_tolower(std::list<Option> const &options, const char *key) const
+{
+	std::string str = lookup_string(options, key);
+	std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+	return str.c_str();
 }
 
 int OptionList::lookup_int(std::list<Option> const &options, const char *key) const
 {
-	Option opt = lookup(options, key);
+	const Option &opt = lookup(options, key);
 	return (int)opt;
 }
 
 bool OptionList::lookup_bool(std::list<Option> const &options, const char *key) const
 {
-	Option opt = lookup(options, key);
+	const Option &opt = lookup(options, key);
 	return (bool)opt;
 }
 
 double OptionList::lookup_double(std::list<Option> const &options, const char *key) const
 {
-	Option opt = lookup(options, key);
+	const Option &opt = lookup(options, key);
 	return (double)opt;
 }
 
 struct json_object *OptionList::lookup_json_array(std::list<Option> const &options, const char *key) const
 {
-	Option opt = lookup(options, key);
+	const Option &opt = lookup(options, key);
 	if (opt.type() != Option::type_array) throw vz::InvalidTypeException("json_object not an array");
 	return (struct json_object *)opt;
 }
 
 struct json_object *OptionList::lookup_json_object(std::list<Option> const &options, const char *key) const
 {
-	Option opt = lookup(options, key);
+	const Option &opt = lookup(options, key);
 	if (opt.type() != Option::type_object) throw vz::InvalidTypeException("json_object not an object");
 	return (struct json_object *)opt;
 }
