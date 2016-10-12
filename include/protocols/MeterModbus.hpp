@@ -1,5 +1,5 @@
 /**
- * Meter interface
+ * Generate pseudo random data series by a random walk
  *
  * @package vzlogger
  * @copyright Copyright (c) 2011, The volkszaehler.org project
@@ -22,22 +22,31 @@
  * You should have received a copy of the GNU General Public License
  * along with volkszaehler.org. If not, see <http://www.gnu.org/licenses/>.
  */
+ 
+#ifndef _METER_MODBUS_H_
+#define _METER_MODBUS_H_
 
-#ifndef _meter_protocol_hpp_
-#define _meter_protocol_hpp_
+#include <modbus/modbus.h>
+#include <protocols/Protocol.hpp>
 
-typedef enum meter_procotol {
-	meter_protocol_none = 0,
-	meter_protocol_file = 1,
-	meter_protocol_exec,
-	meter_protocol_random,
-	meter_protocol_s0,
-	meter_protocol_d0,
-	meter_protocol_sml,
-	meter_protocol_fluksov2,
-	meter_protocol_ocr,
-	meter_protocol_w1therm,
-	meter_protocol_oms,
-	meter_protocol_modbus,
-} meter_protocol_t;
-#endif /* _meter_protocol_hpp_ */
+double ltqnorm(double p); /* forward declaration */
+
+class MeterModbus : public vz::protocol::Protocol {
+
+public:
+	MeterModbus(std::list<Option> options);
+	virtual ~MeterModbus();
+
+	int open();
+	int close();
+	ssize_t read(std::vector<Reading> &rds, size_t n);
+
+protected:
+	double _min;
+	double _max;
+	double _last;
+	uint16_t reg_val[64];
+	modbus_t *ctx;
+};
+
+#endif /* _METER_MODBUS_H_ */

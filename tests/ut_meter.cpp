@@ -19,6 +19,7 @@
 #include "../src/protocols/MeterRandom.cpp"
 #include "../src/protocols/MeterS0.cpp"
 #include "../src/protocols/MeterFluksoV2.cpp"
+#include "../src/protocols/MeterModbus.cpp"
 #include "../src/ltqnorm.cpp"
 
 

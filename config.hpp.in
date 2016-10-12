@@ -46,6 +46,9 @@
 /* true if openssl is found */
 #cmakedefine HAVE_OPENSSL 1
 
+/* true if openssl is found */
+#cmakedefine MODBUS_SUPPORT 1
+
 /* Version number of package */
 #cmakedefine VERSION "@VZLOGGER_RPM_VERSION@"
 #endif /* _config_hpp_in_ */

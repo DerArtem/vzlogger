@@ -47,6 +47,9 @@ endif( TARGET )
 include ( ConfigureMacro )
 
 # options
+OPTION(ENABLE_MODBUS
+  "enable support for modbus (def=yes)])"
+  On)
 OPTION(ENABLE_SML
   "enable support for smart messaging language (def=yes)])"
   On)
@@ -76,6 +79,14 @@ if( ENABLE_SML )
     include_directories(${SML_INCLUDE_DIR})
   endif(SML_FOUND)
 endif( ENABLE_SML )
+
+if( ENABLE_MODBUS )
+  include(FindModbus)
+  if(MODBUS_FOUND)
+    set(MODBUS_SUPPORT 1)
+    include_directories(${MODBUS_INCLUDE_DIR})
+  endif(MODBUS_FOUND)
+endif( ENABLE_MODBUS )
 
 if( ENABLE_OMS )
   # find dependencies todo libmbus
@@ -206,6 +217,9 @@ endif(MICROHTTPD_FOUND)
 if(MBUS_FOUND)
 message("             libmbus: -L${MBUS_LIBRARY} -I${MBUS_INCLUDE_DIR}")
 endif(MBUS_FOUND)
+if(MODBUS_FOUND)
+message("             libmodbus: -L${MODBUS_LIBRARY} -I${MODBUS_INCLUDE_DIR}")
+endif(MODBUS_FOUND)
 
 if( ENABLE_SML AND NOT SML_FOUND)
   message(WARNING "libsml was not found.

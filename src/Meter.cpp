@@ -46,6 +46,9 @@
 #ifdef OMS_SUPPORT
 #include "protocols/MeterOMS.hpp"
 #endif
+#ifdef MODBUS_SUPPORT
+#include "protocols/MeterModbus.hpp"
+#endif
 //#include <protocols/.h>
 
 #define METER_DETAIL(NAME, CLASSNAME, DESC, MAX_RDS, PERIODIC) {				\
@@ -71,6 +74,9 @@ static const meter_details_t protocols[] = {
 	METER_DETAIL(w1therm, W1therm, "W1-therm / 1wire temperature devices", 400, false),
 #ifdef OMS_SUPPORT
 	METER_DETAIL(oms, OMS, "OMS (M-BUS) protocol based devices", 100, false), // todo what is the max. amount of reading according to spec?
+#endif
+#ifdef	MODBUS_SUPPORT
+	METER_DETAIL(modbus, Modbus, "Generic modbus device directly connected to RS485",16,true),
 #endif
 	//{} /* stop condition for iterator */
 	METER_DETAIL(none, NULL,NULL, 0,false),
@@ -159,6 +165,12 @@ Meter::Meter(std::list<Option> pOptions) :
 			_protocol = vz::protocol::Protocol::Ptr(new MeterRandom(pOptions));
 			_identifier = ReadingIdentifier::Ptr(new NilIdentifier());
 			break;
+#ifdef MODBUS_SUPPORT
+		case meter_protocol_modbus:
+			_protocol = vz::protocol::Protocol::Ptr(new MeterModbus(pOptions));
+			_identifier = ReadingIdentifier::Ptr(new StringIdentifier());
+			break;
+#endif
 		case meter_protocol_s0:
 			_protocol = vz::protocol::Protocol::Ptr(new MeterS0(pOptions));
 			_identifier = ReadingIdentifier::Ptr(new StringIdentifier());

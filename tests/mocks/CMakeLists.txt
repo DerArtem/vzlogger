@@ -20,6 +20,7 @@ add_executable(mock_metermap mock_metermap.cpp ../../src/Meter.cpp ../../src/Opt
 	../../src/protocols/MeterSML.cpp
 	../../src/protocols/MeterFluksoV2.cpp
 	../../src/protocols/MeterW1therm.cpp
+	../../src/protocols/MeterModbus.cpp
 	../../src/Reading.cpp
 	../../src/Obis.cpp
 	../../src/ltqnorm.cpp
@@ -57,6 +58,9 @@ endif(SML_FOUND)
 if(MBUS_FOUND)
     target_link_libraries(mock_metermap ${MBUS_LIBRARY})
 endif(MBUS_FOUND)
+if(MODBUS_FOUND)
+    target_link_libraries(mock_metermap ${MODBUS_LIBRARY})
+endif(MODBUS_FOUND)
 
 add_executable(mock_MeterW1therm
     mock_MeterW1therm.cpp

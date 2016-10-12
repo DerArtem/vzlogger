@@ -23,6 +23,10 @@ if( NOT ENABLE_SML )
 list(REMOVE_ITEM test_sources ${CMAKE_CURRENT_SOURCE_DIR}/MeterSML.cpp)
 endif( NOT ENABLE_SML)
 
+if( NOT ENABLE_MODBUS )
+list(REMOVE_ITEM test_sources ${CMAKE_CURRENT_SOURCE_DIR}/MeterModbus.cpp)
+endif( NOT ENABLE_MODBUS)
+
 if( OMS_SUPPORT )
   set(oms_sources ../src/protocols/MeterOMS.cpp)
 elseif( OMS_SUPPORT )
@@ -43,6 +47,10 @@ target_link_libraries(vzlogger_unit_tests ${CURL_STATIC_LIBRARIES} ${CURL_LIBRAR
 if( OMS_SUPPORT )
 target_link_libraries(vzlogger_unit_tests ${MBUS_LIBRARY} ${OPENSSL_LIBRARIES})
 endif( OMS_SUPPORT )
+
+if( MODBUS_SUPPORT )
+  target_link_libraries(vzlogger_unit_tests ${MODBUS_LIBRARY})
+endif( MODBUS_SUPPORT )
 
 if(SML_FOUND)
   target_link_libraries(vzlogger_unit_tests ${SML_LIBRARY})
