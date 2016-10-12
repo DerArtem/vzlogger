@@ -71,8 +71,6 @@ int MeterModbus::open() {
 
         ctx = modbus_new_rtu("/dev/ttyUSB0", 1200, 'E', 8, 1);
         
-	modbus_set_debug(ctx, TRUE);
-
 	if (modbus_connect(ctx) == -1) {
 		print(log_error, "Connection failed: %s\n", modbus_strerror(errno));
 		modbus_free(ctx);
