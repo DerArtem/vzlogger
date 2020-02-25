@@ -53,8 +53,10 @@ shopt -s nocasematch
 ###############################
 # some defaults
 lib_dir=libs
+build_dir=build
 vzlogger_conf=/etc/vzlogger.conf
 git_config=.git/config
+systemd_unit=/etc/systemd/system/vzlogger.service
 
 ###############################
 # functions
@@ -120,6 +122,7 @@ for binary in "${deps[@]}"; do
 	else
 		echo
 		echo " $binary: not found. Please install to use this script (e.g. sudo apt-get install $binary)."
+		echo " For complete list of build requirements please check http://wiki.volkszaehler.org/software/controller/vzlogger/installation_cpp-version"
 		exit 1
 	fi
 done
@@ -246,20 +249,44 @@ popd
 if [ -z "$1" ] || contains "$*" vzlogger; then
 	echo
 	echo "building and installing vzlogger"
+    
+    if [ ! -d "$build_dir" ]; then
+        echo "creating folder $build_dir"
+        mkdir "$build_dir"
+    fi
+    
+    pushd "$build_dir"
 
-	if contains "$*" clean; then
-		echo "clearing cmake cache"
-		rm CMakeCache.txt
+        if contains "$*" clean; then
+            echo "clearing cmake cache"
+            rm CMakeCache.txt
+        fi
+
+        echo
+        echo "building vzlogger"
+        cmake -DBUILD_TEST=off ..
+        make
+
+        echo
+        echo "installing vzlogger"
+        sudo make install
+        
+    popd
+
+	if [ ! -e "$systemd_unit" ]; then
+		echo
+		echo "could not find $systemd_unit"
+		echo "it is recommended to configure a vzlogger systemd service"
+		echo
+
+		read -p "add the systemd unit file? [y/N]" -n 1 -r
+		if [[ $REPLY =~ ^[Yy]$ ]]; then
+			echo
+			echo "installing systemd unit file"
+			sudo cp ./etc/vzlogger.service "$systemd_unit"
+			sudo sed -i "s|/etc/vzlogger.conf|$vzlogger_conf|g" "$systemd_unit"
+		fi
 	fi
-
-	echo
-	echo "building vzlogger"
-	cmake .
-	make
-
-	echo
-	echo "installing vzlogger"
-	sudo make install
 
 	if [ ! -e "$vzlogger_conf" ]; then
 		echo
@@ -271,13 +298,5 @@ if [ -z "$1" ] || contains "$*" vzlogger; then
 		echo
 		echo "vzlogger is already running"
 		echo "make sure to restart vzlogger"
-	fi
-
-	if ! grep -q vzlogger /etc/inittab; then
-		echo
-		echo "could not find vzlogger in /etc/inittab"
-		echo "if you want vzlogger to start automatically add the following line to /etc/inittab"
-		echo "vz:235:respawn:/usr/local/bin/vzlogger -d"
-		echo "activate using `init q`"
 	fi
 fi

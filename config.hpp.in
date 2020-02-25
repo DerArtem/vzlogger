@@ -4,6 +4,9 @@
 /* Local interface */
 #cmakedefine LOCAL_SUPPORT 1
 
+/* mqtt support */
+#cmakedefine ENABLE_MQTT 1
+
 /* Name of package */
 #define PACKAGE "vzlogger"
 
@@ -34,7 +37,7 @@
 /* OCR Meter support */
 #cmakedefine OCR_SUPPORT 1
 
-/* OCR text recgonition support */
+/* OCR text recognition support */
 #cmakedefine OCR_TESSERACT_SUPPORT 1
 
 /* Allow MeterExec protocol to use root privileges */

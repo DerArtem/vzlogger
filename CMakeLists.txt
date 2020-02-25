@@ -6,13 +6,13 @@ if(POLICY CMP0011)
 endif(POLICY CMP0011)
 
 set(VZLOGGER_MAJOR_VERSION 0)
-set(VZLOGGER_MINOR_VERSION 6)
+set(VZLOGGER_MINOR_VERSION 8)
 set(VZLOGGER_SUB_VERSION   0)
 set(VERSION_SEP "-")
 set(VZLOGGER_SHORT_VERSION "${VZLOGGER_MAJOR_VERSION}${VERSION_SEP}${VZLOGGER_MINOR_VERSION}")
 set(VZLOGGER_VERSION "${VZLOGGER_SHORT_VERSION}${VERSION_SEP}${VZLOGGER_SUB_VERSION}")
 set(VZLOGGER_RPM_VERSION "${VZLOGGER_MAJOR_VERSION}.${VZLOGGER_MINOR_VERSION}.${VZLOGGER_SUB_VERSION}")
-set(VERSION_DATE "2012-02-20")
+set(VERSION_DATE "2018-08-04")
 set(PACKAGE_STRING "${PROJECT_NAME} ${VZLOGGER_RPM_VERSION}")
 set(VERSION "${VZLOGGER_RPM_VERSION}")
 set(CMAKE_VERBOSE_MAKEFILE 1)
@@ -58,6 +58,9 @@ OPTION(ENABLE_OMS
 OPTION(ENABLE_LOCAL
   "enable support for local HTTPd (def=yes)]"
   On)
+OPTION(ENABLE_MQTT
+  "enable MQTT client support (def=yes)"
+  On)
 OPTION(WITH_READER
   "compile reader to for testing your meters (def=yes)])"
   On)
@@ -72,6 +75,10 @@ OPTION(ENABLE_OCR_TESSERACT
 OPTION(METEREXEC_ROOTACCESS
   "compile MeterExec protocol to use root privileges for script calls (def=no)])"
   Off)
+
+OPTION(BUILD_TEST
+  "build unit tests (def=on)])"
+  On)
 
 # find dependencies
 # libsml
@@ -113,6 +120,21 @@ if(ENABLE_LOCAL)
     set(LOCAL_SUPPORT 1)
   endif(MICROHTTPD_FOUND)
 endif(ENABLE_LOCAL)
+
+if(ENABLE_MQTT)
+  find_library(MQTT_LIBRARY mosquitto)
+  find_path(MQTT_INCLUDE_DIR mosquitto.h)
+  message( STATUS "search for libmosquitto returned ${MQTT_LIBRARY} and ${MQTT_INCLUDE_DIR}")
+  if(MQTT_LIBRARY AND MQTT_INCLUDE_DIR)
+    message( STATUS "libmosquitto found at ${MQTT_LIBRARY}")
+    include_directories(${MQTT_INCLUDE_DIR})
+  else()
+    set(ENABLE_MQTT OFF)
+    message( WARNING "libmosquitto not found. Disabled ENABLE_MQTT. Consider installing libmosquitto-dev package.")
+  endif(MQTT_LIBRARY AND MQTT_INCLUDE_DIR)
+else()
+  message( STATUS "MQTT support disabled. If wanted use ENABLE_MQTT=On")
+endif(ENABLE_MQTT)
 
 if( ENABLE_OCR OR ENABLE_OCR_TESSERACT )
 	include(FindLeptonica)
@@ -175,13 +197,18 @@ add_subdirectory(src)
 
 find_package(Git)
 
-set(ENABLE_GOOGLEMOCK TRUE)
+if( BUILD_TEST )
+	set(ENABLE_GOOGLEMOCK TRUE)
+else()
+	set(ENABLE_GOOGLEMOCK FALSE)
+endif()
+
 #disable unit tests on gcc4.6 (problems with googlemock 1.7)
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     # require at least gcc 4.8
     execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpversion
        OUTPUT_VARIABLE GOOGLETEST_GCC_COMPILER_VERSION)
-# on travis-ci the CMAKE_CXX_COMPILER_VERSION is empty!    message(WARNING "Using compiler: ${CMAKE_CXX_COMPILER_VERSION} ${GOOGLETEST_GCC_COMPILER_VERSION}") 
+# on travis-ci the CMAKE_CXX_COMPILER_VERSION is empty!    message(WARNING "Using compiler: ${CMAKE_CXX_COMPILER_VERSION} ${GOOGLETEST_GCC_COMPILER_VERSION}")
     if (GOOGLETEST_GCC_COMPILER_VERSION VERSION_LESS 4.8)
         message(WARNING "Disabled googlemock/-test tests due to GCC version < 4.8!")
 	set(ENABLE_GOOGLEMOCK FALSE)
@@ -193,14 +220,48 @@ include(CTest)
 enable_testing()
 
 if(GIT_FOUND AND ENABLE_GOOGLEMOCK)
-  add_subdirectory(gmock)
+  #add_subdirectory(gmock)
+
+  # Download and unpack googletest at configure time
+  configure_file(gtest/CMakeLists.txt.in gtest-download/CMakeLists.txt)
+  execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+  RESULT_VARIABLE result
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gtest-download )
+  if(result)
+      message(FATAL_ERROR "CMake step for googletest failed: ${result}")
+  endif()
+  execute_process(COMMAND ${CMAKE_COMMAND} --build .
+  RESULT_VARIABLE result
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gtest-download )
+  if(result)
+      message(FATAL_ERROR "Build step for googletest failed: ${result}")
+  endif()
+
+  # Prevent overriding the parent project's compiler/linker
+  # settings on Windows
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+  # Add googletest directly to our build. This defines
+  # the gtest and gtest_main targets.
+  add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/gtest-src
+                   ${CMAKE_CURRENT_BINARY_DIR}/gtest-build
+                   EXCLUDE_FROM_ALL)
+
+  # The gtest/gtest_main targets carry header search path
+  # dependencies automatically when using CMake 2.8.11 or
+  # later. Otherwise we have to add them here ourselves.
+  if (CMAKE_VERSION VERSION_LESS 2.8.11)
+      include_directories("${gtest_SOURCE_DIR}/include")
+      include_directories("${gmock_SOURCE_DIR}/include")
+  endif()
+
   add_subdirectory(tests)
 else()
  if (ENABLE_GOOGLEMOCK)
     message(WARNING "googletest based unit tests disabled due to missing git. Please install git.")
  endif(ENABLE_GOOGLEMOCK)
 endif()
-add_test(vzlogger_unit_tests tests/vzlogger_unit_tests)
+add_test(NAME vzlogger_unit_tests COMMAND vzlogger_unit_tests)
 
 ### print some output for the user
 message("")
@@ -215,6 +276,9 @@ endif(SML_FOUND)
 if(MICROHTTPD_FOUND)
 message("             microhttpd: -L${MICROHTTPD_LIBRARY} -I${MICROHTTPD_INCLUDE_DIR}")
 endif(MICROHTTPD_FOUND)
+if(ENABLE_MQTT)
+  message("             mqtt: -L${MQTT_LIBRARY} -I${MQTT_INCLUDE_DIR}")
+endif(ENABLE_MQTT)
 if(METEREXEC_ROOTACCESS)
   message("             MeterExec: root privileges")
 endif(METEREXEC_ROOTACCESS)
@@ -235,7 +299,7 @@ Install microhttpd or call cmake -DMICROHTTPD_HOME=path_to_microhttpd_install")
 endif( ENABLE_LOCAL AND NOT MICROHTTPD_FOUND )
 
 # add some files to the installation target
-INSTALL(FILES README COPYING DESTINATION
+INSTALL(FILES README.md COPYING DESTINATION
   share/doc/vzlogger-${VZLOGGER_MAJOR_VERSION}-${VZLOGGER_MINOR_VERSION}
 )
 
@@ -255,7 +319,7 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "volkszaehler.org ist ein freies Smart Met
 set(CPACK_PACKAGE_VENDOR              "Steffen Vogel")
 set(CPACK_PACKAGE_CONTACT             "Steffen Vogel <info@steffenvogel.de>")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER   "Steffen Vogel <info@steffenvogel.de>")
-set(CPACK_PACKAGE_DESCRIPTION_FILE    "${CMAKE_CURRENT_SOURCE_DIR}/README")
+set(CPACK_PACKAGE_DESCRIPTION_FILE    "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/COPYING")
 set(CPACK_PACKAGE_VERSION_MAJOR ${VZLOGGER_MAJOR_VERSION})
 set(CPACK_PACKAGE_VERSION_MINOR ${VZLOGGER_MINOR_VERSION})
