@@ -38,30 +38,38 @@
 
 MeterModbus::MeterModbus(std::list<Option> options)
 		: Protocol("modbus")
+		, _device("")
 {
-//	OptionList optlist;
+	OptionList optlist;
+	struct json_object *jso = optlist.lookup_json_array(options, "registers");
 
-//	_min = 0;
-//	_max = 40;
-//	_last = (_max + _min) / 2; /* start in the middle */
-//
-//	try {
-//		_min = optlist.lookup_double(options, "min");
-//	} catch (vz::OptionNotFoundException &e) {
-//		_min = 0;
-//	} catch (vz::VZException &e) {
-//		print(log_error, "Min value has to be a floating point number (e.g. '40.0')", name().c_str());
-//		throw;
-//	}
-//
-//	try {
-//		_max = optlist.lookup_double(options, "max");
-//	} catch (vz::OptionNotFoundException &e) {
-//		_max = 0;
-//	} catch (vz::VZException &e) {
-//		print(log_error, "Max value has to be a floating point number (e.g. '40.0')", name().c_str());
-//		throw;
-//	}
+	// Read the registers we want to read from the device
+	try {
+		if (jso && (ModbusRegisterCount=json_object_array_length(jso))>=1){
+			for (int i = 0; i < ModbusRegisterCount; i++) {
+				struct json_object *jb = json_object_array_get_idx(jso, i);
+				ModbusRegister[i] = json_object_get_int(jb);
+			}
+		}
+	} catch (vz::VZException &e){
+		print(log_error, "Could not read register configuration", name().c_str());
+		throw;
+	}
+
+	try {
+		_device = optlist.lookup_string(options, "device");
+	} catch (vz::VZException &e){
+		print(log_error, "Missing device", name().c_str());
+		throw;
+	}
+
+        //baudrate = 9600; /* default to avoid compiler warning */
+        try {
+                _baudrate = optlist.lookup_int(options, "baudrate");
+        } catch (vz::VZException &e) {
+                print(log_error, "Failed to parse the baudrate", name().c_str());
+                throw;
+        }
 }
 
 MeterModbus::~MeterModbus() {
@@ -69,7 +77,7 @@ MeterModbus::~MeterModbus() {
 
 int MeterModbus::open() {
 
-        ctx = modbus_new_rtu("/dev/ttyUSB0", 1200, 'E', 8, 1);
+        ctx = modbus_new_rtu(device(), _baudrate, 'E', 8, 1);
         
 	if (modbus_connect(ctx) == -1) {
 		print(log_error, "Connection failed: %s\n", modbus_strerror(errno));
@@ -92,35 +100,25 @@ int MeterModbus::close() {
 ssize_t MeterModbus::read(std::vector<Reading> &rds, size_t n) {
 
 	int rc;
-	uint32_t import_energy;
-	uint32_t total_power;
+	uint32_t readValue;
+	char strIdentifier[16];
 
 	if (rds.size() < 1) return -1;
 
-        rc = modbus_read_registers(ctx, 0x160, 2, reg_val);
+	for (int i = 0; i < ModbusRegisterCount; i++) {
+		rc = modbus_read_registers(ctx, ModbusRegister[i], 2, reg_val);
+		if (rc == -1) {
+			print(log_error, "Reading failed: %s\n", modbus_strerror(errno));
+			return -1;
+		}
 
-        if (rc == -1) {
-		print(log_error, "Reading failed: %s\n", modbus_strerror(errno));
-                return -1;
-        }
+		readValue = (uint32_t)reg_val[0] << 16 | (uint32_t)reg_val[1];
 
-	import_energy = (uint32_t)reg_val[0] << 16 | (uint32_t)reg_val[1];
-
-	rc = modbus_read_registers(ctx, 0x96, 2, reg_val);
-	if (rc == -1) {
-		print(log_error, "Reading failed: %s\n", modbus_strerror(errno));
-		return -1;
+		rds[i].value(readValue);
+		rds[i].time();
+		sprintf(strIdentifier, "%d", ModbusRegister[i]);
+		rds[i].identifier(new StringIdentifier (strIdentifier));
 	}
 
-	total_power = (uint32_t)reg_val[0] << 16 | (uint32_t)reg_val[1];
-
-	rds[0].value(import_energy);
-	rds[0].time();
-	rds[0].identifier(new StringIdentifier("Energy"));
-
-	rds[1].value(total_power);
-	rds[1].time();
-	rds[1].identifier(new StringIdentifier("Power"));
-
-	return 2;
+	return ModbusRegisterCount;
 }

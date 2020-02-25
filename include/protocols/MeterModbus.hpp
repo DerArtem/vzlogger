@@ -29,8 +29,6 @@
 #include <modbus/modbus.h>
 #include <protocols/Protocol.hpp>
 
-double ltqnorm(double p); /* forward declaration */
-
 class MeterModbus : public vz::protocol::Protocol {
 
 public:
@@ -41,11 +39,16 @@ public:
 	int close();
 	ssize_t read(std::vector<Reading> &rds, size_t n);
 
+	const char *device() const { return _device.c_str(); }
+
 protected:
-	double _min;
-	double _max;
-	double _last;
+	std::string _device;
+	int _baudrate;
+	parity_type_t _parity;
 	uint16_t reg_val[64];
+	int ModbusRegisterCount;
+	int ModbusRegister[16];
+
 	modbus_t *ctx;
 };
 
